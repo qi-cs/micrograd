@@ -1,18 +1,27 @@
+import micrograd_cpu
+import micrograd_cuda
 
 class Value:
     """ stores a single scalar value and its gradient """
 
-    def __init__(self, data, _children=(), _op=''):
+    def __init__(self, data, _children=(), _op='', device='cpu'):
         self.data = data
         self.grad = 0
-        # internal variables used for autograd graph construction
+        self.device = device
         self._backward = lambda: None
         self._prev = set(_children)
-        self._op = _op # the op that produced this node, for graphviz / debugging / etc
+        self._op = _op
 
     def __add__(self, other):
-        other = other if isinstance(other, Value) else Value(other)
-        out = Value(self.data + other.data, (self, other), '+')
+        other = other if isinstance(other, Value) else Value(other, device=self.device)
+        if self.device == 'cpu' and micrograd_cpu:
+            out_data = micrograd_cpu.cpu_add(self.data, other.data)
+        elif self.device == 'cuda' and micrograd_cuda:
+            out_data = micrograd_cuda.cuda_add(self.data, other.data)
+        else:
+            raise RuntimeError("Backend not available")
+            
+        out = Value(out_data, (self, other), '+', device=self.device)
 
         def _backward():
             self.grad += out.grad
@@ -22,8 +31,15 @@ class Value:
         return out
 
     def __mul__(self, other):
-        other = other if isinstance(other, Value) else Value(other)
-        out = Value(self.data * other.data, (self, other), '*')
+        other = other if isinstance(other, Value) else Value(other, device=self.device)
+        if self.device == 'cpu' and micrograd_cpu:
+            out_data = micrograd_cpu.cpu_multiply(self.data, other.data)
+        elif self.device == 'cuda' and micrograd_cuda:
+            out_data = micrograd_cuda.cuda_multiply(self.data, other.data)
+        else:
+            raise RuntimeError("Backend not available")
+            
+        out = Value(out_data, (self, other), '*', device=self.device)
 
         def _backward():
             self.grad += other.data * out.grad
